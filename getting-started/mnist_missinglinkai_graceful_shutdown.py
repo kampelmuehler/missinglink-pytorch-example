@@ -96,6 +96,22 @@ loss_function = F.nll_loss
 OWNER_ID = args.owner_id or OWNER_ID
 PROJECT_TOKEN = args.project_token or PROJECT_TOKEN
 
+
+def start_new_experiment():
+    # Write code here that starts a new experiment
+    pass
+
+
+def log_experiment_to_internal_log():
+    # Write code here that logs important information
+    # to your internal logs
+    pass
+
+
+def stopped_callback():
+    start_new_experiment()
+    log_experiment_to_internal_log()
+
 missinglink_project = missinglink.PyTorchProject(owner_id=OWNER_ID, project_token=PROJECT_TOKEN)
 
 
@@ -159,7 +175,8 @@ with missinglink_project.create_experiment(
         model,
         metrics={'loss': loss_function},
         display_name='PyTorch convolutional neural network',
-        description='Two dimensional convolutional neural network') as experiment:
+        description='Two dimensional convolutional neural network',
+        stopped_callback=stopped_callback) as experiment:
     loss_function = experiment.metrics['loss']
     train()
     test()

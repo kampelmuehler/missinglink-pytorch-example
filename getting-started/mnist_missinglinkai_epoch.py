@@ -38,6 +38,8 @@ parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
 parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
+parser.add_argument('--val-interval', type=int, default=500, metavar='N',
+                    help='how many batches to wait between validation (default: 500)')
 parser.add_argument('--owner-id', required=True)
 parser.add_argument('--project-token', required=True)
 args = parser.parse_args()
@@ -94,65 +96,50 @@ loss_function = F.nll_loss
 OWNER_ID = args.owner_id or OWNER_ID
 PROJECT_TOKEN = args.project_token or PROJECT_TOKEN
 
-missinglink_callback = missinglink.PyTorchCallback(
-    owner_id=OWNER_ID, project_token=PROJECT_TOKEN, model=model, optimizer=optimizer
-)
-
-mnist_class_mapping = {
-    0: 'zero',
-    1: 'one',
-    2: 'two',
-    3: 'three',
-    4: 'four',
-    5: 'five',
-    6: 'six',
-    7: 'seven',
-    8: 'eight',
-    9: 'nine',
-}
-
-missinglink_callback.set_properties(
-    display_name='PyTorch convolutional neural network',
-    description='Two dimensional convolutional neural network',
-    class_mapping=mnist_class_mapping
-)
-
-loss_function = missinglink_callback.wrap_metrics({'loss': loss_function})['loss']
+missinglink_project = missinglink.PyTorchProject(owner_id=OWNER_ID, project_token=PROJECT_TOKEN)
 
 
-def train(epoch):
+def train():
     model.train()
-    for batch_idx, (data, target) in enumerate(train_loader):
+    train_iterator = iter(train_loader)
+    for batch_idx in experiment.loop(len(train_loader), epoch_size=100):
+        data, target = next(train_iterator)
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data), Variable(target)
-        optimizer.zero_grad_batch(epoch=epoch)
+        optimizer.zero_grad()
         output = model(data)
         loss = loss_function(output, target)
         loss.backward()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
+            print('[{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss.data[0]))
+
+        if batch_idx % args.val_interval == 0:
+            validation()
 
 
 def validation():
     model.eval()
-    with missinglink_callback.validation():
-        for data, target in test_loader:
+    with experiment.validation():
+        for batch_idx, (data, target) in enumerate(test_loader):
             if args.cuda:
                 data, target = data.cuda(), target.cuda()
             data, target = Variable(data, volatile=True), Variable(target)
             output = model(data)
             loss_function(output, target, size_average=False)
 
+            if batch_idx >= len(test_loader) * 0.1:
+                break
+
 
 def test():
     model.eval()
     test_loss = 0
     correct = 0
-    with missinglink_callback.test(model, test_loader):
+    with experiment.test(model, test_loader):
         for data, target in test_loader:
             if args.cuda:
                 data, target = data.cuda(), target.cuda()
@@ -167,12 +154,12 @@ def test():
         print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
             test_loss, correct, len(test_loader.dataset), test_accuracy))
 
-    missinglink_callback.end_epoch({'loss': test_loss, 'accuracy': test_accuracy})
 
-
-for epoch in range(1, args.epochs + 1):
-    train(epoch)
-    validation()
+with missinglink_project.create_experiment(
+        model,
+        metrics={'loss': loss_function},
+        display_name='PyTorch convolutional neural network',
+        description='Two dimensional convolutional neural network') as experiment:
+    loss_function = experiment.metrics['loss']
+    train()
     test()
-
-missinglink_callback.end_train()

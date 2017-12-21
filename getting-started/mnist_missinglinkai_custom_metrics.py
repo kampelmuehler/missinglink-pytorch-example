@@ -92,6 +92,10 @@ optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 loss_function = F.nll_loss
 
 
+def accuracy(correct_count, total):
+    return 100.0 * correct_count / total
+
+
 # Override credential values if provided as arguments
 OWNER_ID = args.owner_id or OWNER_ID
 PROJECT_TOKEN = args.project_token or PROJECT_TOKEN
@@ -101,6 +105,7 @@ missinglink_project = missinglink.PyTorchProject(owner_id=OWNER_ID, project_toke
 
 def train():
     model.train()
+    correct = 0
     train_iterator = iter(train_loader)
     for batch_idx in experiment.loop(len(train_loader)):
         data, target = next(train_iterator)
@@ -112,6 +117,10 @@ def train():
         loss = loss_function(output, target)
         loss.backward()
         optimizer.step()
+
+        pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
+        correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+
         if batch_idx % args.log_interval == 0:
             print('[{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 batch_idx * len(data), len(train_loader.dataset),
@@ -119,6 +128,8 @@ def train():
 
         if batch_idx % args.val_interval == 0:
             validation()
+
+    accuracy(correct, len(train_loader))
 
 
 def validation():
@@ -150,16 +161,17 @@ def test():
             correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
         test_loss /= len(test_loader.dataset)
-        test_accuracy = 100. * correct / len(test_loader.dataset)
+        test_accuracy = accuracy(correct, len(test_loader.dataset))
         print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
             test_loss, correct, len(test_loader.dataset), test_accuracy))
 
 
 with missinglink_project.create_experiment(
         model,
-        metrics={'loss': loss_function},
+        metrics={'loss': loss_function, 'accuracy': accuracy},
         display_name='PyTorch convolutional neural network',
         description='Two dimensional convolutional neural network') as experiment:
     loss_function = experiment.metrics['loss']
+    accuracy = experiment.metrics['accuracy']
     train()
     test()

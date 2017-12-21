@@ -159,7 +159,8 @@ with missinglink_project.create_experiment(
         model,
         metrics={'loss': loss_function},
         display_name='PyTorch convolutional neural network',
-        description='Two dimensional convolutional neural network') as experiment:
+        description='Two dimensional convolutional neural network',
+        hyperparams={'dropout_rate': model.conv2_drop.p}) as experiment:
     loss_function = experiment.metrics['loss']
     train()
     test()

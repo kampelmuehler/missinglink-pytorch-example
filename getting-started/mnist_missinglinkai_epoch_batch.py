@@ -99,10 +99,10 @@ PROJECT_TOKEN = args.project_token or PROJECT_TOKEN
 missinglink_project = missinglink.PyTorchProject(owner_id=OWNER_ID, project_token=PROJECT_TOKEN)
 
 
-def train():
+def train(epoch):
     model.train()
     train_iterator = iter(train_loader)
-    for batch_idx in experiment.loop(len(train_loader)):
+    for batch_idx in experiment.batch_loop(len(train_loader)):
         data, target = next(train_iterator)
         if args.cuda:
             data, target = data.cuda(), target.cuda()
@@ -113,8 +113,8 @@ def train():
         loss.backward()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
-            print('[{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                batch_idx * len(data), len(train_loader.dataset),
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss.data[0]))
 
         if batch_idx % args.val_interval == 0:
@@ -161,5 +161,6 @@ with missinglink_project.create_experiment(
         display_name='PyTorch convolutional neural network',
         description='Two dimensional convolutional neural network') as experiment:
     loss_function = experiment.metrics['loss']
-    train()
-    test()
+    for epoch in experiment.epoch_loop(args.epochs):
+        train(epoch)
+        test()
