@@ -101,9 +101,7 @@ missinglink_project = missinglink.PyTorchProject(owner_id=OWNER_ID, project_toke
 
 def train():
     model.train()
-    train_iterator = iter(train_loader)
-    for batch_idx in experiment.loop(len(train_loader), epoch_size=100):
-        data, target = next(train_iterator)
+    for batch_idx, (data, target) in experiment.loop(iterable=train_loader, epoch_size=100):
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data), Variable(target)
