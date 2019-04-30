@@ -40,10 +40,14 @@ parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('--val-interval', type=int, default=500, metavar='N',
                     help='how many batches to wait between validation (default: 500)')
-parser.add_argument('--owner-id', required=True)
-parser.add_argument('--project-token', required=True)
+parser.add_argument('--owner-id', default=OWNER_ID)
+parser.add_argument('--project-token', default=PROJECT_TOKEN)
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
+
+# Override credential values if provided as arguments
+OWNER_ID = args.owner_id or OWNER_ID
+PROJECT_TOKEN = args.project_token or PROJECT_TOKEN
 
 torch.manual_seed(args.seed)
 if args.cuda:
@@ -82,26 +86,12 @@ class Net(nn.Module):
         x = F.relu(self.fc1(x))
         x = F.dropout(x, training=self.training)
         x = self.fc2(x)
-        return F.log_softmax(x)
-
-model = Net()
-if args.cuda:
-    model.cuda()
-
-optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
-loss_function = F.nll_loss
+        return F.log_softmax(x, dim=1)
 
 
-# Override credential values if provided as arguments
-OWNER_ID = args.owner_id or OWNER_ID
-PROJECT_TOKEN = args.project_token or PROJECT_TOKEN
-
-missinglink_project = missinglink.PyTorchProject(owner_id=OWNER_ID, project_token=PROJECT_TOKEN)
-
-
-def train(epoch):
-    model.train()
+def train(experiment, model, loss_function, optimizer, epoch):
     for batch_idx, (data, target) in experiment.batch_loop(iterable=train_loader):
+        model.train()
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data), Variable(target)
@@ -112,28 +102,29 @@ def train(epoch):
         optimizer.step()
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.data[0]))
+                epoch + 1, batch_idx * len(data), len(train_loader.dataset),
+                100. * batch_idx / len(train_loader), loss.item()))
 
         if batch_idx % args.val_interval == 0:
-            validation()
+            validation(experiment, model, loss_function)
 
 
-def validation():
+def validation(experiment, model, loss_function):
     model.eval()
     with experiment.validation():
-        for batch_idx, (data, target) in enumerate(test_loader):
-            if args.cuda:
-                data, target = data.cuda(), target.cuda()
-            data, target = Variable(data, volatile=True), Variable(target)
-            output = model(data)
-            loss_function(output, target, size_average=False)
+        with torch.no_grad():
+            for batch_idx, (data, target) in enumerate(test_loader):
+                if args.cuda:
+                    data, target = data.cuda(), target.cuda()
+                data, target = Variable(data), Variable(target)
+                output = model(data)
+                loss_function(output, target)
 
-            if batch_idx >= len(test_loader) * 0.1:
-                break
+                if batch_idx >= len(test_loader) * 0.1:
+                    break
 
 
-def test():
+def test(experiment, model, loss_function):
     model.eval()
     test_loss = 0
     correct = 0
@@ -141,9 +132,9 @@ def test():
         for data, target in test_loader:
             if args.cuda:
                 data, target = data.cuda(), target.cuda()
-            data, target = Variable(data, volatile=True), Variable(target)
+            data, target = Variable(data), Variable(target)
             output = model(data)
-            test_loss += loss_function(output, target, size_average=False).data[0]  # sum up batch loss
+            test_loss += loss_function(output, target).item()  # sum up batch loss
             pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
             correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
@@ -153,12 +144,25 @@ def test():
             test_loss, correct, len(test_loader.dataset), test_accuracy))
 
 
-with missinglink_project.create_experiment(
-        model,
-        metrics={'loss': loss_function},
-        display_name='PyTorch convolutional neural network',
-        description='Two dimensional convolutional neural network') as experiment:
-    loss_function = experiment.metrics['loss']
-    for epoch in experiment.epoch_loop(epochs=args.epochs):
-        train(epoch)
-        test()
+def main():
+    model = Net()
+    if args.cuda:
+        model.cuda()
+
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
+    loss_function = F.nll_loss
+
+    missinglink_project = missinglink.PyTorchProject(owner_id=OWNER_ID, project_token=PROJECT_TOKEN)
+    with missinglink_project.create_experiment(
+            model,
+            metrics={'loss': loss_function},
+            display_name='PyTorch convolutional neural network',
+            description='Two dimensional convolutional neural network') as experiment:
+        loss_function = experiment.metrics['loss']
+        for epoch in experiment.epoch_loop(epochs=args.epochs):
+            train(experiment, model, loss_function, optimizer, epoch)
+            test(experiment, model, loss_function)
+
+
+if __name__ == '__main__':
+    main()
