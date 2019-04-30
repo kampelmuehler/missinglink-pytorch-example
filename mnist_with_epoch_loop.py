@@ -129,19 +129,20 @@ def test(experiment, model, loss_function):
     test_loss = 0
     correct = 0
     with experiment.test(model, test_loader):
-        for data, target in test_loader:
-            if args.cuda:
-                data, target = data.cuda(), target.cuda()
-            data, target = Variable(data), Variable(target)
-            output = model(data)
-            test_loss += loss_function(output, target).item()  # sum up batch loss
-            pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
-            correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+        with torch.no_grad():
+            for data, target in test_loader:
+                if args.cuda:
+                    data, target = data.cuda(), target.cuda()
+                data, target = Variable(data), Variable(target)
+                output = model(data)
+                test_loss += loss_function(output, target).item()  # sum up batch loss
+                pred = output.data.max(1, keepdim=True)[1]  # get the index of the max log-probability
+                correct += pred.eq(target.data.view_as(pred)).cpu().sum()
 
-        test_loss /= len(test_loader.dataset)
-        test_accuracy = 100. * correct / len(test_loader.dataset)
-        print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-            test_loss, correct, len(test_loader.dataset), test_accuracy))
+            test_loss /= len(test_loader.dataset)
+            test_accuracy = 100. * correct / len(test_loader.dataset)
+            print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+                test_loss, correct, len(test_loader.dataset), test_accuracy))
 
 
 def main():
